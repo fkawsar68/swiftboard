@@ -1,0 +1,1095 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SwiftBoard — Local Kanban Task Board</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg: #F0EDE8;
+  --surface: #E8E3DC;
+  --card: #FDFAF6;
+  --border: #D4CCC0;
+  --text: #2A2118;
+  --text-muted: #8A7D6C;
+  --accent: #C85A2A;
+  --accent-soft: #F5EDE4;
+  --accent-hover: #B04D22;
+  --col-header: #EFEBE4;
+  --shadow: 0 1px 4px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04);
+  --shadow-drag: 0 8px 32px rgba(0,0,0,0.18);
+  --scrollbar: #C8C0B0;
+  --overlay: rgba(42,33,24,0.5);
+  --todo: #4A7FC1;
+  --inprog: #C85A2A;
+  --done: #3A9E6A;
+  --tag-bg: #EDE8E0;
+  --priority-high: #E05050;
+  --priority-med: #E09030;
+  --priority-low: #60A878;
+}
+
+[data-theme="dark"] {
+  --bg: #181410;
+  --surface: #221E18;
+  --card: #2A2418;
+  --border: #38301E;
+  --text: #EAE0D0;
+  --text-muted: #6A5E48;
+  --accent: #E07040;
+  --accent-soft: #2A1E12;
+  --accent-hover: #C86030;
+  --col-header: #201C14;
+  --tag-bg: #302820;
+  --scrollbar: #38301E;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  overflow: hidden;
+  transition: background 0.3s, color 0.3s;
+}
+
+/* ── TOPBAR ── */
+#topbar {
+  height: 48px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 16px;
+  user-select: none;
+  position: relative;
+  z-index: 100;
+}
+
+.brand {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.brand span { color: var(--accent); }
+
+#board-title-input {
+  flex: 1;
+  max-width: 280px;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+#board-title-input:hover { border-color: var(--border); background: var(--bg); }
+#board-title-input:focus { border-color: var(--accent); background: var(--card); }
+
+.topbar-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.icon-btn {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.icon-btn:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+
+.icon-btn.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.icon-btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #fff; }
+
+#task-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ── BOARD ── */
+#board-wrap {
+  height: calc(100vh - 48px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 20px;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+#board-wrap::-webkit-scrollbar { height: 6px; }
+#board-wrap::-webkit-scrollbar-track { background: transparent; }
+#board-wrap::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
+
+/* ── COLUMN ── */
+.column {
+  width: 290px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 88px);
+  transition: background 0.3s;
+}
+
+.col-header {
+  padding: 14px 14px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--col-header);
+  border-radius: 12px 12px 0 0;
+  user-select: none;
+}
+
+.col-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.col-name {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: 'DM Sans', sans-serif;
+}
+
+.col-count {
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-muted);
+  background: var(--tag-bg);
+  padding: 1px 7px;
+  border-radius: 10px;
+}
+
+.col-menu-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 4px;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+
+.col-menu-btn:hover { color: var(--accent); }
+
+.col-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 60px;
+}
+
+.col-body::-webkit-scrollbar { width: 4px; }
+.col-body::-webkit-scrollbar-track { background: transparent; }
+.col-body::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 2px; }
+
+.col-body.drag-over {
+  background: var(--accent-soft);
+  border-radius: 0 0 12px 12px;
+}
+
+.col-footer {
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--border);
+}
+
+.add-card-btn {
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.add-card-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+/* ── CARD ── */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 11px 12px;
+  cursor: grab;
+  transition: box-shadow 0.15s, transform 0.15s, border-color 0.15s;
+  position: relative;
+  user-select: none;
+}
+
+.card:hover {
+  box-shadow: var(--shadow);
+  border-color: var(--accent);
+}
+
+.card.dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+
+.card.drag-ghost {
+  box-shadow: var(--shadow-drag);
+  transform: rotate(2deg);
+  opacity: 1;
+}
+
+.card-priority-bar {
+  position: absolute;
+  left: 0; top: 8px; bottom: 8px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+}
+
+.card-title {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--text);
+  margin-left: 8px;
+  margin-bottom: 6px;
+  word-break: break-word;
+}
+
+.card-desc {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin-left: 8px;
+  margin-bottom: 8px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  flex-wrap: wrap;
+}
+
+.card-tag {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: var(--tag-bg);
+  color: var(--text-muted);
+  font-weight: 500;
+  letter-spacing: 0.03em;
+}
+
+.card-due {
+  font-size: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.card-due.overdue { color: var(--priority-high); }
+
+.card-actions {
+  display: none;
+  position: absolute;
+  top: 8px; right: 8px;
+  gap: 4px;
+}
+
+.card:hover .card-actions { display: flex; }
+
+.card-action-btn {
+  width: 22px; height: 22px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+}
+
+.card-action-btn:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.card-action-btn.delete:hover { background: #FEE; color: var(--priority-high); border-color: var(--priority-high); }
+
+/* ── ADD COLUMN ── */
+#add-col-btn {
+  width: 240px;
+  flex-shrink: 0;
+  height: 56px;
+  background: transparent;
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.15s;
+  margin-top: 0;
+}
+
+#add-col-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+/* ── MODAL ── */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  z-index: 500;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(3px);
+}
+
+.modal-overlay.show { display: flex; }
+
+.modal {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px 32px;
+  width: 90%;
+  max-width: 460px;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.2);
+  animation: modalIn 0.2s cubic-bezier(0.34,1.56,0.64,1);
+  position: relative;
+}
+
+@keyframes modalIn {
+  from { transform: scale(0.9) translateY(16px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.modal h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 20px;
+  color: var(--text);
+}
+
+.form-group {
+  margin-bottom: 14px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.form-group input,
+.form-group textarea,
+.form-group select {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+  resize: vertical;
+}
+
+.form-group input:focus,
+.form-group textarea:focus,
+.form-group select:focus { border-color: var(--accent); }
+
+.form-group select option { background: var(--card); }
+
+.form-row { display: flex; gap: 12px; }
+.form-row .form-group { flex: 1; }
+
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.btn {
+  padding: 9px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-cancel { background: transparent; color: var(--text-muted); }
+.btn-cancel:hover { background: var(--tag-bg); }
+.btn-save { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-save:hover { background: var(--accent-hover); }
+
+.modal-close {
+  position: absolute;
+  top: 14px; right: 16px;
+  background: none; border: none;
+  font-size: 18px;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.6;
+}
+.modal-close:hover { opacity: 1; }
+
+/* ── PREMIUM MODAL ── */
+#premium-modal .modal {
+  text-align: center;
+  max-width: 400px;
+}
+
+#premium-modal .modal-icon { font-size: 28px; margin-bottom: 12px; }
+
+#premium-modal h3 { margin-bottom: 8px; }
+
+#premium-modal p {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin-bottom: 18px;
+}
+
+.feature-list {
+  text-align: left;
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  font-size: 12.5px;
+  line-height: 1.9;
+  list-style: none;
+}
+
+.feature-list li::before { content: "✦ "; color: var(--accent); font-size: 10px; }
+
+.btn-full {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  border-radius: 9px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+  text-decoration: none;
+  transition: all 0.15s;
+  margin-bottom: 8px;
+}
+
+.btn-full.primary { background: var(--accent); color: #fff; border: none; }
+.btn-full.primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
+.btn-full.secondary { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+.btn-full.secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+#license-input {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  outline: none;
+  margin-bottom: 8px;
+  transition: border-color 0.15s;
+}
+
+#license-input:focus { border-color: var(--accent); }
+
+/* ── SEARCH ── */
+#search-input {
+  padding: 6px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  outline: none;
+  width: 160px;
+  transition: border-color 0.15s, width 0.2s;
+}
+
+#search-input:focus { border-color: var(--accent); width: 200px; }
+
+/* ── EMPTY COLUMN ── */
+.empty-col {
+  text-align: center;
+  padding: 20px 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* ── THEME TOGGLE ── */
+.theme-toggle {
+  width: 32px; height: 32px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 15px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+}
+.theme-toggle:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div id="topbar">
+  <div class="brand">Swift<span>Board</span></div>
+  <input type="text" id="board-title-input" value="My Board" maxlength="40" />
+  <input type="text" id="search-input" placeholder="🔍 Search cards…" oninput="filterCards(this.value)" />
+  <div class="topbar-right">
+    <span id="task-count">0 tasks</span>
+    <button class="theme-toggle" id="theme-toggle-btn" title="Toggle theme">◑</button>
+    <button class="icon-btn" onclick="exportBoard()">↗ Export</button>
+    <button class="icon-btn primary" id="upgrade-btn">✦ Premium</button>
+  </div>
+</div>
+
+<!-- BOARD -->
+<div id="board-wrap">
+  <!-- columns injected by JS -->
+  <button id="add-col-btn" onclick="addColumn()">＋ Add Column</button>
+</div>
+
+<!-- CARD MODAL -->
+<div class="modal-overlay" id="card-modal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeCardModal()">×</button>
+    <h3 id="card-modal-title">Add Card</h3>
+    <div class="form-group">
+      <label>Title *</label>
+      <input type="text" id="card-title-input" placeholder="What needs to be done?" maxlength="120" />
+    </div>
+    <div class="form-group">
+      <label>Description</label>
+      <textarea id="card-desc-input" rows="3" placeholder="Optional details…"></textarea>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Priority</label>
+        <select id="card-priority-input">
+          <option value="none">None</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Due Date</label>
+        <input type="date" id="card-due-input" />
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Tag</label>
+      <input type="text" id="card-tag-input" placeholder="e.g. design, bug, feature" maxlength="20" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeCardModal()">Cancel</button>
+      <button class="btn btn-save" onclick="saveCard()">Save Card</button>
+    </div>
+  </div>
+</div>
+
+<!-- PREMIUM MODAL -->
+<div class="modal-overlay" id="premium-modal">
+  <div class="modal" style="text-align:center;position:relative">
+    <button class="modal-close" onclick="closePremiumModal()">×</button>
+    <div class="modal-icon">✦</div>
+    <h3>Unlock SwiftBoard Premium</h3>
+    <p id="premium-msg">One flat payment. No subscription. Yours forever.</p>
+    <ul class="feature-list">
+      <li>Unlimited columns (free: 3)</li>
+      <li>Unlimited cards per column (free: 5)</li>
+      <li>Dark theme</li>
+      <li>Export board as JSON backup</li>
+      <li>All future updates free</li>
+    </ul>
+    <a href="https://webutility.lemonsqueezy.com/checkout/buy/d69dfd66-111c-4492-8d73-6dcc0fefe83c" class="btn-full primary" target="_blank" rel="noopener">Get Premium — $9.00</a>
+    <input type="text" id="license-input" placeholder="Enter license key (SW-…)" />
+    <button class="btn-full secondary" onclick="activateLicense()">Activate License Key</button>
+    <button class="btn-full secondary" onclick="closePremiumModal()" style="margin-top:4px">Continue Free</button>
+  </div>
+</div>
+
+<script>
+// ── CONSTANTS ──
+const FREE_COL_LIMIT = 3;
+const FREE_CARD_LIMIT = 5;
+const PREMIUM_COL_LIMIT = 20;
+const PREMIUM_CARD_LIMIT = 100;
+const PRIORITY_COLORS = { high: '#E05050', medium: '#E09030', low: '#60A878', none: 'transparent' };
+const COL_COLORS = ['#4A7FC1','#C85A2A','#3A9E6A','#9B6AC8','#C8A82A','#C84A7A'];
+
+// ── STATE ──
+let state = {
+  boardTitle: 'My Board',
+  columns: [],
+  isPremium: false,
+  theme: 'light',
+  nextColId: 1,
+  nextCardId: 1
+};
+
+let dragCard = null, dragCol = null, editingCard = null, editingColId = null;
+
+// ── PERSISTENCE ──
+function save() {
+  localStorage.setItem('swiftboard_v1', JSON.stringify(state));
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem('swiftboard_v1');
+    if (raw) {
+      state = JSON.parse(raw);
+      return;
+    }
+  } catch(e) {}
+
+  // Default board
+  state.columns = [
+    { id: 1, name: 'To Do', color: COL_COLORS[0], cards: [
+      { id: 1, title: 'Welcome to SwiftBoard', desc: 'Drag cards between columns. Click + to add new cards.', priority: 'none', tag: 'start', due: '' },
+      { id: 2, title: 'Add your first task', desc: '', priority: 'high', tag: '', due: '' }
+    ]},
+    { id: 2, name: 'In Progress', color: COL_COLORS[1], cards: [] },
+    { id: 3, name: 'Done', color: COL_COLORS[2], cards: [] }
+  ];
+  state.nextColId = 4;
+  state.nextCardId = 3;
+}
+
+// ── RENDER ──
+function render() {
+  const wrap = document.getElementById('board-wrap');
+  const addBtn = document.getElementById('add-col-btn');
+  wrap.innerHTML = '';
+
+  state.columns.forEach(col => {
+    wrap.appendChild(buildColumn(col));
+  });
+
+  wrap.appendChild(addBtn);
+
+  document.getElementById('board-title-input').value = state.boardTitle;
+  applyTheme();
+  updateTaskCount();
+}
+
+function buildColumn(col) {
+  const el = document.createElement('div');
+  el.className = 'column';
+  el.dataset.colId = col.id;
+
+  const cardCount = col.cards.length;
+
+  el.innerHTML = `
+    <div class="col-header">
+      <div class="col-dot" style="background:${col.color}"></div>
+      <input class="col-name" value="${escHtml(col.name)}" maxlength="30"
+        onchange="renameColumn(${col.id}, this.value)"
+        onclick="event.stopPropagation()" />
+      <span class="col-count">${cardCount}</span>
+      <button class="col-menu-btn" onclick="deleteColumn(${col.id})" title="Delete column">×</button>
+    </div>
+    <div class="col-body" id="col-body-${col.id}"
+      ondragover="onDragOver(event, ${col.id})"
+      ondragleave="onDragLeave(event)"
+      ondrop="onDrop(event, ${col.id})">
+      ${col.cards.length === 0 ? '<div class="empty-col">Drop cards here</div>' : ''}
+      ${col.cards.map(card => buildCardHTML(card, col.id)).join('')}
+    </div>
+    <div class="col-footer">
+      <button class="add-card-btn" onclick="openAddCard(${col.id})">＋ Add card</button>
+    </div>
+  `;
+
+  return el;
+}
+
+function buildCardHTML(card, colId) {
+  const priorityColor = PRIORITY_COLORS[card.priority] || 'transparent';
+  const dueStr = card.due ? formatDue(card.due) : '';
+  const isOverdue = card.due && new Date(card.due) < new Date() && card.priority !== 'done';
+  return `
+    <div class="card" draggable="true" data-card-id="${card.id}" data-col-id="${colId}"
+      ondragstart="onDragStart(event, ${card.id}, ${colId})"
+      ondragend="onDragEnd(event)">
+      <div class="card-priority-bar" style="background:${priorityColor}"></div>
+      <div class="card-actions">
+        <button class="card-action-btn" onclick="openEditCard(${card.id}, ${colId})" title="Edit">✎</button>
+        <button class="card-action-btn delete" onclick="deleteCard(${card.id}, ${colId})" title="Delete">×</button>
+      </div>
+      <div class="card-title">${escHtml(card.title)}</div>
+      ${card.desc ? `<div class="card-desc">${escHtml(card.desc)}</div>` : ''}
+      <div class="card-footer">
+        ${card.tag ? `<span class="card-tag">${escHtml(card.tag)}</span>` : ''}
+        ${dueStr ? `<span class="card-due${isOverdue ? ' overdue' : ''}">${dueStr}</span>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+function formatDue(dateStr) {
+  const d = new Date(dateStr);
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function updateTaskCount() {
+  const total = state.columns.reduce((sum, col) => sum + col.cards.length, 0);
+  document.getElementById('task-count').textContent = `${total} task${total !== 1 ? 's' : ''}`;
+}
+
+// ── COLUMNS ──
+function addColumn() {
+  const limit = state.isPremium ? PREMIUM_COL_LIMIT : FREE_COL_LIMIT;
+  if (state.columns.length >= limit) {
+    showPremiumModal(`Free plan allows ${FREE_COL_LIMIT} columns. Upgrade for unlimited.`);
+    return;
+  }
+  const col = {
+    id: state.nextColId++,
+    name: 'New Column',
+    color: COL_COLORS[state.columns.length % COL_COLORS.length],
+    cards: []
+  };
+  state.columns.push(col);
+  save();
+  render();
+}
+
+function deleteColumn(colId) {
+  const col = state.columns.find(c => c.id === colId);
+  if (!col) return;
+  if (col.cards.length > 0 && !confirm(`Delete "${col.name}" and all ${col.cards.length} cards?`)) return;
+  state.columns = state.columns.filter(c => c.id !== colId);
+  save();
+  render();
+}
+
+function renameColumn(colId, name) {
+  const col = state.columns.find(c => c.id === colId);
+  if (col) { col.name = name; save(); updateTaskCount(); }
+}
+
+// ── CARDS ──
+let pendingColId = null;
+
+function openAddCard(colId) {
+  const col = state.columns.find(c => c.id === colId);
+  const limit = state.isPremium ? PREMIUM_CARD_LIMIT : FREE_CARD_LIMIT;
+  if (col && col.cards.length >= limit) {
+    showPremiumModal(`Free plan allows ${FREE_CARD_LIMIT} cards per column. Upgrade for unlimited.`);
+    return;
+  }
+  pendingColId = colId;
+  editingCard = null;
+  document.getElementById('card-modal-title').textContent = 'Add Card';
+  document.getElementById('card-title-input').value = '';
+  document.getElementById('card-desc-input').value = '';
+  document.getElementById('card-priority-input').value = 'none';
+  document.getElementById('card-due-input').value = '';
+  document.getElementById('card-tag-input').value = '';
+  document.getElementById('card-modal').classList.add('show');
+  setTimeout(() => document.getElementById('card-title-input').focus(), 100);
+}
+
+function openEditCard(cardId, colId) {
+  const col = state.columns.find(c => c.id === colId);
+  if (!col) return;
+  const card = col.cards.find(c => c.id === cardId);
+  if (!card) return;
+  pendingColId = colId;
+  editingCard = cardId;
+  document.getElementById('card-modal-title').textContent = 'Edit Card';
+  document.getElementById('card-title-input').value = card.title;
+  document.getElementById('card-desc-input').value = card.desc || '';
+  document.getElementById('card-priority-input').value = card.priority || 'none';
+  document.getElementById('card-due-input').value = card.due || '';
+  document.getElementById('card-tag-input').value = card.tag || '';
+  document.getElementById('card-modal').classList.add('show');
+  setTimeout(() => document.getElementById('card-title-input').focus(), 100);
+}
+
+function closeCardModal() {
+  document.getElementById('card-modal').classList.remove('show');
+  editingCard = null;
+  pendingColId = null;
+}
+
+function saveCard() {
+  const title = document.getElementById('card-title-input').value.trim();
+  if (!title) { document.getElementById('card-title-input').focus(); return; }
+
+  const col = state.columns.find(c => c.id === pendingColId);
+  if (!col) return;
+
+  const cardData = {
+    title,
+    desc: document.getElementById('card-desc-input').value.trim(),
+    priority: document.getElementById('card-priority-input').value,
+    due: document.getElementById('card-due-input').value,
+    tag: document.getElementById('card-tag-input').value.trim()
+  };
+
+  if (editingCard !== null) {
+    const card = col.cards.find(c => c.id === editingCard);
+    if (card) Object.assign(card, cardData);
+  } else {
+    col.cards.push({ id: state.nextCardId++, ...cardData });
+  }
+
+  save();
+  render();
+  closeCardModal();
+}
+
+function deleteCard(cardId, colId) {
+  const col = state.columns.find(c => c.id === colId);
+  if (!col) return;
+  col.cards = col.cards.filter(c => c.id !== cardId);
+  save();
+  render();
+}
+
+// ── DRAG & DROP ──
+function onDragStart(e, cardId, colId) {
+  dragCard = cardId;
+  dragCol = colId;
+  setTimeout(() => {
+    const el = document.querySelector(`[data-card-id="${cardId}"]`);
+    if (el) el.classList.add('dragging');
+  }, 0);
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function onDragEnd(e) {
+  document.querySelectorAll('.card').forEach(el => el.classList.remove('dragging'));
+  document.querySelectorAll('.col-body').forEach(el => el.classList.remove('drag-over'));
+}
+
+function onDragOver(e, colId) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  document.querySelectorAll('.col-body').forEach(el => el.classList.remove('drag-over'));
+  document.getElementById(`col-body-${colId}`).classList.add('drag-over');
+}
+
+function onDragLeave(e) {
+  if (!e.currentTarget.contains(e.relatedTarget)) {
+    e.currentTarget.classList.remove('drag-over');
+  }
+}
+
+function onDrop(e, targetColId) {
+  e.preventDefault();
+  document.querySelectorAll('.col-body').forEach(el => el.classList.remove('drag-over'));
+
+  if (dragCard === null) return;
+
+  const srcCol = state.columns.find(c => c.id === dragCol);
+  const tgtCol = state.columns.find(c => c.id === targetColId);
+  if (!srcCol || !tgtCol) return;
+
+  const cardIdx = srcCol.cards.findIndex(c => c.id === dragCard);
+  if (cardIdx === -1) return;
+
+  const [card] = srcCol.cards.splice(cardIdx, 1);
+
+  // Insert at correct position
+  const colBody = document.getElementById(`col-body-${targetColId}`);
+  const cards = [...colBody.querySelectorAll('.card:not(.dragging)')];
+  let insertIdx = tgtCol.cards.length;
+
+  for (let i = 0; i < cards.length; i++) {
+    const rect = cards[i].getBoundingClientRect();
+    if (e.clientY < rect.top + rect.height / 2) {
+      insertIdx = i;
+      break;
+    }
+  }
+
+  tgtCol.cards.splice(insertIdx, 0, card);
+  dragCard = null;
+  dragCol = null;
+  save();
+  render();
+}
+
+// ── SEARCH / FILTER ──
+function filterCards(query) {
+  const q = query.toLowerCase().trim();
+  document.querySelectorAll('.card').forEach(card => {
+    if (!q) { card.style.display = ''; return; }
+    const title = card.querySelector('.card-title')?.textContent.toLowerCase() || '';
+    const desc = card.querySelector('.card-desc')?.textContent.toLowerCase() || '';
+    const tag = card.querySelector('.card-tag')?.textContent.toLowerCase() || '';
+    card.style.display = (title.includes(q) || desc.includes(q) || tag.includes(q)) ? '' : 'none';
+  });
+}
+
+// ── EXPORT ──
+function exportBoard() {
+  if (!state.isPremium) { showPremiumModal('Board export is a Premium feature.'); return; }
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `swiftboard_${Date.now()}.json`;
+  a.click();
+}
+
+// ── THEME ──
+document.getElementById('theme-toggle-btn').addEventListener('click', () => {
+  if (!state.isPremium) { showPremiumModal('Dark theme is a Premium feature.'); return; }
+  state.theme = state.theme === 'light' ? 'dark' : 'light';
+  applyTheme();
+  save();
+});
+
+function applyTheme() {
+  document.documentElement.setAttribute('data-theme', state.theme === 'dark' ? 'dark' : '');
+}
+
+// ── BOARD TITLE ──
+document.getElementById('board-title-input').addEventListener('change', (e) => {
+  state.boardTitle = e.target.value.trim() || 'My Board';
+  save();
+});
+
+// ── PREMIUM ──
+function showPremiumModal(msg) {
+  document.getElementById('premium-msg').textContent = msg || 'Upgrade for full access.';
+  document.getElementById('premium-modal').classList.add('show');
+}
+
+function closePremiumModal() {
+  document.getElementById('premium-modal').classList.remove('show');
+}
+
+document.getElementById('upgrade-btn').addEventListener('click', () => showPremiumModal('Upgrade to SwiftBoard Premium.'));
+
+document.getElementById('premium-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('premium-modal')) closePremiumModal();
+});
+
+document.getElementById('card-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('card-modal')) closeCardModal();
+});
+
+function activateLicense() {
+  const key = document.getElementById('license-input').value.trim();
+  if (key.length > 12 && key.startsWith('SW-')) {
+    state.isPremium = true;
+    save();
+    closePremiumModal();
+    alert('✦ Premium activated! Thank you.');
+  } else {
+    alert('Invalid license key. Keys begin with SW- and are 20+ characters.');
+  }
+}
+
+// ── KEYBOARD ──
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    closeCardModal();
+    closePremiumModal();
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    if (document.getElementById('card-modal').classList.contains('show')) saveCard();
+  }
+});
+
+// ── INIT ──
+load();
+render();
+</script>
+</body>
+</html>
